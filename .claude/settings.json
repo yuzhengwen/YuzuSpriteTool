@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell",
+      "Bash",
+      "mcp__unity-mcp__Unity_GetConsoleLogs",
+      "mcp__unity-mcp__Unity_SceneView_Capture2DScene",
+      "Bash(npm run lint)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Get-Content *)",
+      "mcp__claude_ai_Claude_Docs__guide",
+      "mcp__claude_ai_Claude_Docs__read"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\YU\\AppData\\Local\\Temp\\claude"
+    ],
+    "blockReadsOutsideWorkingDirectories": false
+  }
+}
