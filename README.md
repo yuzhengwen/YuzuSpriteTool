@@ -29,12 +29,40 @@ The pipeline:
 
 After changing code, run `build.bat run` again.
 
-## Files
+## Project layout
 
-| File | What it is |
-|---|---|
-| `main.py` | The UI (both tabs, preview popup) |
-| `sprite_core.py` | Slicing and packing logic, no UI |
-| `tests/smoke_test.py` | Core checks + offscreen UI run; screenshots go to `tests/out/` |
-| `YuzuSpriteTool.spec` | PyInstaller recipe (excludes unused Qt modules to keep the exe small) |
-| `tools/make_icon.py` | Generates `assets/icon.ico`; delete the .ico to regenerate |
+```
+main.py                     launcher (also the PyInstaller entry point)
+sprite_tool/
+  app.py                    startup: QApplication, theme, icon, main window
+  resources.py              finds bundled files (source or exe)
+  core/                     image logic: Pillow only, no Qt
+    geometry.py             Rect
+    image_io.py             loading images, supported extensions
+    naming.py               numbered file names, natural sort
+    slicing.py              SliceSettings, compute_cells, slice_sheet
+    packing.py              PackSettings, pack_sprites, pack_metadata
+  ui/
+    main_window.py          the window: hosts both tabs and wires them together
+    theme.py                all colors, palette and stylesheet
+    qt_image.py             Pillow to Qt conversion, thumbnails, checkerboard
+    file_dialogs.py         open/save pickers and saving many files
+    prefs.py                remembered folder, window size, last tab
+    forms/                  settings panels (emit `changed`, return core settings)
+      slice_form.py         "How to slice"
+      pack_form.py          "Layout"
+    tabs/
+      unpack_tab.py         sheet on the left, sliced sprites on the right
+      pack_tab.py           ordered sprite list on the left, packed sheet on the right
+    widgets/                reusable widgets with no tab-specific logic
+      image_view.py         zoom/pan viewer with grid and selection overlays
+      zoom_bar.py, preview_dialog.py, sprite_delegate.py,
+      sprite_order_list.py, placeholder.py, factory.py
+tests/
+  test_core.py              pure logic checks
+  smoke_test.py             core checks + offscreen UI run (screenshots in tests/out/)
+tools/make_icon.py          generates assets/icon.ico
+YuzuSpriteTool.spec         PyInstaller recipe
+```
+
+Dependencies only point one way: `ui` uses `core`, and `core` never imports Qt. To add a slicing or packing feature, add it to `core` and test it in `tests/test_core.py`, then expose it in the matching form.
