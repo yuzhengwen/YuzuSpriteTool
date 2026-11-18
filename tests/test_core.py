@@ -98,14 +98,65 @@ def test_resolve_grid_and_naming():
     assert sorted(["a10", "a2", "A1"], key=core.natural_key) == ["A1", "a2", "a10"]
 
 
+def test_editing(sheet):
+    _, sprites = core.slice_sheet(sheet, size_settings())
+    img = sprites[0].image   # 32 x 32
+
+    assert core.apply_edit(img, None) is img
+    assert core.normalize_edit(img, core.SpriteEdit()) is None
+    assert core.normalize_edit(img, core.SpriteEdit(crop=core.Rect(0, 0, 32, 32), size=(32, 32))) is None
+
+    edit = core.SpriteEdit(crop=core.Rect(4, 6, 20, 10), size=(40, 20))
+    out = core.apply_edit(img, edit)
+    assert out.size == (40, 20) and img.size == (32, 32)   # original untouched
+    # Nearest-neighbour 2x keeps exact pixel values.
+    assert out.getpixel((0, 0)) == img.getpixel((4, 6)) == out.getpixel((1, 1))
+
+    # Out-of-range crop is clamped; a size equal to the crop is dropped.
+    clamped = core.normalize_edit(img, core.SpriteEdit(crop=core.Rect(30, 30, 50, 50), size=(2, 2)))
+    assert clamped == core.SpriteEdit(crop=core.Rect(30, 30, 2, 2), size=None)
+
+    bounds = core.alpha_bounds(img)
+    assert bounds is not None and bounds.x > 0 and bounds.w < 32
+    assert core.alpha_bounds(Image.new("RGBA", (5, 5), (0, 0, 0, 0))) is None
+
+
+def test_playback():
+    def run(mode, start, count, steps):
+        index, direction, seen = start, 1, []
+        for _ in range(steps):
+            s = core.next_frame(index, count, direction, mode)
+            index, direction = s.index, s.direction
+            seen.append(index)
+            if s.finished:
+                seen.append("end")
+                break
+        return seen
+
+    assert run(core.LOOP, 0, 3, 5) == [1, 2, 0, 1, 2]
+    assert run(core.PING_PONG, 0, 3, 6) == [1, 2, 1, 0, 1, 2]
+    assert run(core.ONCE, 0, 3, 5) == [1, 2, 2, "end"]
+    assert run(core.LOOP, 0, 1, 2) == [0, 0]
+    assert core.frame_interval_ms(12) == 83 and core.frame_interval_ms(0) == 1000
+
+    a = Image.new("RGBA", (10, 20), (255, 0, 0, 255))
+    b = Image.new("RGBA", (4, 6), (0, 255, 0, 255))
+    frames = core.compose_frames([a, b], core.ALIGN_BOTTOM)
+    assert [f.size for f in frames] == [(10, 20), (10, 20)]
+    assert frames[1].getpixel((3, 19)) == (0, 255, 0, 255)   # bottom-centered
+    assert frames[1].getpixel((3, 0))[3] == 0                 # transparent above it
+    assert core.compose_frames([a, a])[0] is a                # same-size frames are left alone
+
+
 def run_all() -> None:
     sheet = make_sample_sheet()
     tests = [test_slice_by_size, test_slice_by_grid, test_start_corner, test_keep_empty_and_trim,
-             test_too_many_cells, test_pack]
+             test_too_many_cells, test_pack, test_editing]
     for t in tests:
         t(sheet)
     test_resolve_grid_and_naming()
-    print(f"core OK ({len(tests) + 1} tests)")
+    test_playback()
+    print(f"core OK ({len(tests) + 2} tests)")
 
 
 if __name__ == "__main__":

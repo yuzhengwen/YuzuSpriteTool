@@ -35,6 +35,15 @@ QPushButton:disabled { color: #6c6c74; background: #303035; border-color: #38383
 QPushButton#primary { background: #ffb02e; color: #1e1e21; border: 1px solid #ffb02e; font-weight: 600; }
 QPushButton#primary:hover { background: #ffc254; }
 QPushButton#primary:disabled { background: #5a4a2c; color: #8a7a5c; border-color: #5a4a2c; }
+/* Segmented control: joined toggle buttons, rounded only on the outer ends. */
+QPushButton#segment, QPushButton#segmentFirst, QPushButton#segmentLast { padding: 5px 16px; }
+QPushButton#segment { border-radius: 0; }
+QPushButton#segmentFirst { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+QPushButton#segmentLast { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+QPushButton#segment:checked, QPushButton#segmentFirst:checked, QPushButton#segmentLast:checked {
+    background: #ffb02e; color: #1e1e21; border-color: #ffb02e; font-weight: 600; }
+QPushButton#transport { padding: 4px 8px; min-width: 34px; font-size: 11pt; }
+QPushButton#transport:checked { background: #ffb02e; color: #1e1e21; border-color: #ffb02e; }
 
 QListWidget { background: #232327; border: 1px solid #3a3a40; border-radius: 8px; padding: 4px; }
 QListWidget::item { border-radius: 6px; padding: 2px; }

@@ -1,27 +1,22 @@
-"""Unpack tab: load a sprite sheet (left), slice it, and browse/save the sprites (right)."""
+"""Unpack tab: load and slice a sprite sheet (left), then browse/save the sprites (right)."""
 from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image
 from PySide6.QtCore import QItemSelectionModel, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QHBoxLayout, QLabel, QLineEdit, QListView, QListWidget, QListWidgetItem,
-    QMenu, QMessageBox, QPushButton, QSlider, QSplitter, QVBoxLayout, QWidget,
+    QMenu, QPushButton, QSlider, QSplitter, QVBoxLayout, QWidget,
 )
 
-from ... import APP_NAME
-from ...core import DEFAULT_PREFIX, Sprite, load_rgba, numbered_name, slice_sheet
-from .. import file_dialogs, prefs
-from ..forms import SliceSettingsForm
+from ...core import DEFAULT_PREFIX, Sprite, numbered_name
+from .. import file_dialogs
+from ..dialogs import PreviewDialog
+from ..panels import SheetSlicerPanel
 from ..qt_image import copy_to_clipboard, pil_to_pixmap, sprite_icon, thumb_pixmap
-from ..theme import error_html
-from ..widgets import (
-    ImageView, PreviewDialog, SpriteDelegate, ZoomBar, hint_label, pane_title, primary_button,
-)
+from ..widgets import SpriteDelegate, hint_label, pane_title, primary_button
 
-RESLICE_DELAY_MS = 120
 THUMB_DELAY_MS = 80
 THUMB_MIN, THUMB_MAX, THUMB_DEFAULT = 32, 256, 96
 TILE_PAD_W, TILE_PAD_H = 26, 46   # room around a thumbnail for its label
@@ -34,17 +29,19 @@ class UnpackTab(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.sheet: Image.Image | None = None
-        self.sprites: list[Sprite] = []
         self._pixmaps: list[QPixmap] = []
-
-        self._reslice_timer = QTimer(self, singleShot=True, interval=RESLICE_DELAY_MS)
-        self._reslice_timer.timeout.connect(self.reslice)
         self._thumb_timer = QTimer(self, singleShot=True, interval=THUMB_DELAY_MS)
         self._thumb_timer.timeout.connect(self._refresh_thumbnails)
 
+        self.slicer = SheetSlicerPanel()
+        self.slicer.layout().setContentsMargins(0, 0, 6, 0)
+        self.slicer.sliced.connect(self._on_sliced)
+        self.slicer.sheetLoaded.connect(self._on_sheet_loaded)
+        self.slicer.spriteClicked.connect(self._on_sheet_clicked)
+        self.slicer.status.connect(self.status)
+
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self._build_sheet_pane())
+        splitter.addWidget(self.slicer)
         splitter.addWidget(self._build_sprites_pane())
         splitter.setSizes([700, 600])
         lay = QVBoxLayout(self)
@@ -52,37 +49,17 @@ class UnpackTab(QWidget):
         lay.addWidget(splitter)
         self._update_buttons()
 
+    @property
+    def sprites(self) -> list[Sprite]:
+        return self.slicer.sprites
+
+    def open_dialog(self) -> None:
+        self.slicer.open_dialog()
+
+    def load_sheet(self, path: str) -> None:
+        self.slicer.load_sheet(path)
+
     # ================================================================ layout
-    def _build_sheet_pane(self) -> QWidget:
-        pane = QWidget()
-        lay = QVBoxLayout(pane)
-        lay.setContentsMargins(0, 0, 6, 0)
-
-        self.view = ImageView("Drop a sprite sheet here\nor click to choose a file")
-        self.view.filesDropped.connect(lambda paths: self.load_sheet(paths[0]))
-        self.view.emptyClicked.connect(self.open_dialog)
-        self.view.sceneClicked.connect(self._on_sheet_clicked)
-
-        open_btn = primary_button("Open sheet…")
-        open_btn.clicked.connect(self.open_dialog)
-        header = QHBoxLayout()
-        header.addWidget(pane_title("Sprite sheet"))
-        header.addStretch()
-        header.addWidget(ZoomBar(self.view))
-        header.addWidget(open_btn)
-
-        self.file_label = hint_label("No sheet loaded", wrap=False)
-        self.form = SliceSettingsForm()
-        self.form.changed.connect(self._schedule_reslice)
-        self.slice_info = hint_label(wrap=False)
-
-        lay.addLayout(header)
-        lay.addWidget(self.file_label)
-        lay.addWidget(self.view, 1)
-        lay.addWidget(self.form)
-        lay.addWidget(self.slice_info)
-        return pane
-
     def _build_sprites_pane(self) -> QWidget:
         pane = QWidget()
         lay = QVBoxLayout(pane)
@@ -163,52 +140,31 @@ class UnpackTab(QWidget):
             row.addWidget(b)
         return row
 
-    # ================================================================ loading & slicing
-    def open_dialog(self) -> None:
-        path = file_dialogs.ask_open_image(self, "Open sprite sheet")
-        if path:
-            self.load_sheet(path)
-
-    def load_sheet(self, path: str) -> None:
-        try:
-            img = load_rgba(path)
-        except Exception as exc:  # noqa: BLE001 - any decoder error should reach the user
-            QMessageBox.warning(self, APP_NAME, f"Could not open the image:\n{path}\n\n{exc}")
-            return
-        prefs.remember_dir(path)
-        self.sheet = img
-        self.view.set_pixmap(pil_to_pixmap(img))
-        self.file_label.setText(f"{Path(path).name}  ·  {img.width} × {img.height} px")
+    # ================================================================ reacting to the sheet
+    def _on_sheet_loaded(self, path: str) -> None:
         self.prefix.blockSignals(True)
         self.prefix.setText(Path(path).stem)
         self.prefix.blockSignals(False)
-        self.reslice()
-        self.status.emit(f"Opened {path}")
 
-    def _schedule_reslice(self) -> None:
-        if self.sheet is not None:
-            self._reslice_timer.start()   # debounce rapid spin-box changes
-
-    def reslice(self) -> None:
-        if self.sheet is None:
-            return
-        try:
-            cells, sprites = slice_sheet(self.sheet, self.form.settings())
-        except ValueError as exc:
-            self.slice_info.setText(error_html(str(exc)))
-            return
-        self.sprites = sprites
-        self._pixmaps = [pil_to_pixmap(s.image) for s in sprites]
-        self.view.set_grid(cells)
-        self.view.set_highlight([])
+    def _on_sliced(self) -> None:
+        self._pixmaps = [pil_to_pixmap(s.image) for s in self.sprites]
         self._populate_grid()
 
-        if not cells:
-            self.slice_info.setText(error_html("No cells fit. Check the size, offset and gap."))
+    def _on_sheet_clicked(self, index: int, modifiers) -> None:
+        """Clicking a cell on the sheet selects its sprite (Ctrl/Shift toggles)."""
+        multi = bool(modifiers & MULTI_SELECT)
+        if index < 0:
+            if not multi:
+                self.list.clearSelection()
             return
-        skipped = len(cells) - len(sprites)
-        extra = f" · {skipped} empty skipped" if skipped else ""
-        self.slice_info.setText(f"{len(cells)} cells of {cells[0].w} × {cells[0].h} px{extra}")
+        item = self.list.item(index)
+        if multi:
+            item.setSelected(not item.isSelected())
+        else:
+            self.list.clearSelection()
+            item.setSelected(True)
+        self.list.setCurrentItem(item, QItemSelectionModel.NoUpdate)
+        self.list.scrollToItem(item)
 
     # ================================================================ sprite grid
     def name_for(self, i: int) -> str:
@@ -251,7 +207,7 @@ class UnpackTab(QWidget):
         return sorted(self.list.row(it) for it in self.list.selectedItems())
 
     def _on_selection_changed(self) -> None:
-        self.view.set_highlight(self.sprites[r].cell for r in self.selected_rows())
+        self.slicer.highlight(self.selected_rows())
         self._update_buttons()
 
     def _update_buttons(self) -> None:
@@ -261,23 +217,6 @@ class UnpackTab(QWidget):
         self.send_btn.setEnabled(has_sprites)
         self.save_sel_btn.setEnabled(n > 0)
         self.save_sel_btn.setText(f"Save selected ({n})…" if n else "Save selected…")
-
-    def _on_sheet_clicked(self, x: float, y: float, modifiers) -> None:
-        """Clicking a cell on the sheet selects its sprite (Ctrl/Shift toggles)."""
-        multi = bool(modifiers & MULTI_SELECT)
-        hit = next((i for i, s in enumerate(self.sprites) if s.cell.contains(x, y)), None)
-        if hit is None:
-            if not multi:
-                self.list.clearSelection()
-            return
-        item = self.list.item(hit)
-        if multi:
-            item.setSelected(not item.isSelected())
-        else:
-            self.list.clearSelection()
-            item.setSelected(True)
-        self.list.setCurrentItem(item, QItemSelectionModel.NoUpdate)
-        self.list.scrollToItem(item)
 
     # ================================================================ actions
     def preview(self, i: int) -> None:

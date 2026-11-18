@@ -62,7 +62,7 @@ def resolve_grid(n: int, cols: int, rows: int) -> tuple[int, int]:
     return cols, rows
 
 
-def _align_offset(align: str, cell_w: int, cell_h: int, w: int, h: int) -> tuple[int, int]:
+def align_offset(align: str, cell_w: int, cell_h: int, w: int, h: int) -> tuple[int, int]:
     if align == ALIGN_TOP_LEFT:
         return 0, 0
     if align == ALIGN_BOTTOM:
@@ -103,7 +103,7 @@ def pack_sprites(images: list[Image.Image], names: list[str], s: PackSettings) -
         sprite = im
         if sprite.width > cw or sprite.height > ch:   # explicit cell size smaller than the sprite
             sprite = sprite.crop((0, 0, min(cw, sprite.width), min(ch, sprite.height)))
-        dx, dy = _align_offset(s.align, cw, ch, sprite.width, sprite.height)
+        dx, dy = align_offset(s.align, cw, ch, sprite.width, sprite.height)
         sheet.alpha_composite(sprite, (x0 + dx, y0 + dy))
         result.frames.append({
             "name": names[i] if i < len(names) else f"sprite_{i}",

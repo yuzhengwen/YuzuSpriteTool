@@ -8,9 +8,7 @@ from PIL import Image
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from ..qt_image import copy_to_clipboard, pil_to_pixmap
-from .factory import primary_button
-from .image_view import ImageView
-from .zoom_bar import ZoomBar
+from ..widgets import ImageView, ZoomBar, primary_button
 
 SCREEN_FRACTION = 0.7   # how much of the screen the image may take when opened
 

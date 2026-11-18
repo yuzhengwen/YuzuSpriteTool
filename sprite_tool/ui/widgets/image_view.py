@@ -74,6 +74,16 @@ class ImageView(QGraphicsView):
         self.setCursor(Qt.OpenHandCursor)
         self.viewport().update()
 
+    def update_pixmap(self, pm: QPixmap) -> None:
+        """Swap the shown image cheaply, keeping zoom, pan and overlays (e.g. for animation).
+
+        Falls back to set_pixmap when the size changes or nothing is shown yet.
+        """
+        if self.has_image and self._pix_item.pixmap().size() == pm.size():
+            self._pix_item.setPixmap(pm)
+        else:
+            self.set_pixmap(pm, fit=not self.has_image or self._auto_fit)
+
     def clear_image(self) -> None:
         self.scene().clear()
         self._pix_item = self._grid_item = self._highlight_item = None
@@ -124,7 +134,9 @@ class ImageView(QGraphicsView):
     def fit(self) -> None:
         if not self.has_image:
             return
-        self.fitInView(self._pix_item, Qt.KeepAspectRatio)
+        # Fit the image's bounding box. fitInView(item) would fit the pixmap's *shape*,
+        # which excludes transparent pixels and over-zooms sprites with empty edges.
+        self.fitInView(self._pix_item.sceneBoundingRect(), Qt.KeepAspectRatio)
         z = self.zoom()
         if z > 1:   # whole-number zoom keeps pixels square and crisp
             self.resetTransform()
